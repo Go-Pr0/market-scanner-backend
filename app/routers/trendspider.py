@@ -4,12 +4,13 @@ TrendSpider API Router
 FastAPI router for TrendSpider EMA scanner endpoints.
 """
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Response, Depends
 from fastapi.responses import PlainTextResponse
 from typing import Dict, List, Optional
 import logging
 
 from ..services.trendspider_service import trendspider_service
+from ..core.security import require_auth
 from ..models.trendspider import (
     ScanRequest, ScanResponse, SymbolResult,
     ConfigurationModel, ConfigurationCreateRequest, ConfigurationUpdateRequest,
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/trendspider", tags=["TrendSpider EMA Scanner"])
 
 @router.post("/scan", response_model=ScanResponse)
-async def run_ema_scan(request: ScanRequest):
+async def run_ema_scan(request: ScanRequest, _: bool = Depends(require_auth)):
     """
     Run an EMA scan with the specified parameters
     
@@ -89,7 +90,7 @@ async def run_ema_scan(request: ScanRequest):
         raise HTTPException(status_code=500, detail=f"Error running EMA scan: {str(e)}")
 
 @router.post("/scan/csv")
-async def run_ema_scan_csv(request: ScanRequest):
+async def run_ema_scan_csv(request: ScanRequest, _: bool = Depends(require_auth)):
     """
     Run an EMA scan and return results as CSV
     
@@ -130,7 +131,7 @@ async def run_ema_scan_csv(request: ScanRequest):
         raise HTTPException(status_code=500, detail=f"Error running EMA scan: {str(e)}")
 
 @router.get("/configurations", response_model=ConfigurationListResponse)
-async def list_configurations(user_configs: bool = True):
+async def list_configurations(user_configs: bool = True, _: bool = Depends(require_auth)):
     """
     List available configurations
     
@@ -359,7 +360,7 @@ async def validate_configuration(config: ConfigurationModel):
         raise HTTPException(status_code=500, detail=f"Error validating configuration: {str(e)}")
 
 @router.get("/timeframes", response_model=TimeframeOptionsResponse)
-async def get_timeframe_options():
+async def get_timeframe_options(_: bool = Depends(require_auth)):
     """
     Get available timeframe options
     """
@@ -372,7 +373,7 @@ async def get_timeframe_options():
         raise HTTPException(status_code=500, detail=f"Error getting timeframe options: {str(e)}")
 
 @router.get("/symbols", response_model=SymbolsResponse)
-async def get_available_symbols():
+async def get_available_symbols(_: bool = Depends(require_auth)):
     """
     Get the list of available symbols for scanning
     """
