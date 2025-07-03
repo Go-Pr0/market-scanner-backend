@@ -5,7 +5,7 @@ import asyncio
 from fastapi.concurrency import run_in_threadpool
 
 from app.core.config import settings
-from app.routers import health, market
+from app.routers import health, market, trendspider
 
 # Create FastAPI application instance
 app = FastAPI(title=settings.app_name, version=settings.version)
@@ -22,6 +22,7 @@ app.add_middleware(
 # Include application routers
 app.include_router(health.router)
 app.include_router(market.router)
+app.include_router(trendspider.router)
 
 
 # ---------------------------------------------------------------------------
@@ -31,6 +32,7 @@ app.include_router(market.router)
 from app.services.fully_diluted_service import update_fully_diluted_cache
 from app.services.market_analysis_service import update_market_analysis_cache
 from app.services.bybit_monitor_service import bybit_monitor_service
+from app.trendspider import trendspider_setup
 
 
 async def _fully_diluted_cache_refresher() -> None:
@@ -60,6 +62,9 @@ async def _market_analysis_cache_refresher() -> None:
 # Register startup event to launch background tasks
 @app.on_event("startup")
 async def start_background_tasks() -> None:
+    # Initialize TrendSpider module
+    trendspider_setup()
+    
     # Start the Bybit monitor service
     await bybit_monitor_service.start()
     
