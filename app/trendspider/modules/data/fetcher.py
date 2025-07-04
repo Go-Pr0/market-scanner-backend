@@ -4,7 +4,7 @@ import pandas as pd
 import logging
 import time
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 
 from ... import config
 
@@ -87,7 +87,7 @@ def resample_candles_to_timeframe(df: pd.DataFrame, target_timeframe_minutes: in
     
     return resampled
 
-async def fetch_kline_data_async(session=None, symbol: str = "", interval: str = "240", max_period: Optional[int] = None) -> Dict[str, Any]:
+async def fetch_kline_data_async(session=None, symbol: str = "", interval: str = "240", max_period: Optional[int] = None) -> Tuple[Dict[str, Any], Optional[pd.DataFrame]]:
     """
     Fetch kline data from local database for a symbol with timeframe conversion
     
@@ -98,14 +98,13 @@ async def fetch_kline_data_async(session=None, symbol: str = "", interval: str =
         max_period: Maximum EMA period to calculate (determines how many candles to fetch)
         
     Returns:
-        Dictionary with symbol data and EMA calculations
+        Tuple of (Dictionary with symbol data and EMA calculations, DataFrame with candle data or None)
     """
     try:
         # Convert interval to minutes
         requested_timeframe_minutes = convert_timeframe_to_minutes(interval)
         
         # Determine how many database candles to fetch
-        # We need enough 15m candles to calculate the EMA after resampling
         limit = 1000  # Default increased from 500
         if max_period:
             # Calculate how many 15m candles we need for the target timeframe
@@ -134,7 +133,7 @@ async def fetch_kline_data_async(session=None, symbol: str = "", interval: str =
                 "success": False,
                 "error": "No data available in database",
                 "timestamp": datetime.now().isoformat()
-            }
+            }, None
         
         # Resample to target timeframe if needed
         if requested_timeframe_minutes != DATABASE_TIMEFRAME_MINUTES:
@@ -150,7 +149,7 @@ async def fetch_kline_data_async(session=None, symbol: str = "", interval: str =
                 "success": False,
                 "error": f"No data available after resampling to {requested_timeframe_minutes}m timeframe",
                 "timestamp": datetime.now().isoformat()
-            }
+            }, None
         
         # Get current price from the most recent candle
         current_price = float(df["close"].iloc[-1])
@@ -175,7 +174,7 @@ async def fetch_kline_data_async(session=None, symbol: str = "", interval: str =
         logger.debug(f"Fetched {symbol} from database in {fetch_time:.2f}s "
                     f"({len(df_15m)} 15m candles -> {len(df)} {requested_timeframe_minutes}m candles)")
         
-        return result
+        return result, df
             
     except Exception as e:
         logger.error(f"Error fetching data from database for {symbol}: {str(e)}")
@@ -184,54 +183,4 @@ async def fetch_kline_data_async(session=None, symbol: str = "", interval: str =
             "success": False,
             "error": str(e),
             "timestamp": datetime.now().isoformat()
-        }
-
-async def get_candle_dataframe(symbol: str, interval: str = "240", max_period: Optional[int] = None) -> pd.DataFrame:
-    """
-    Get candle data as DataFrame directly from database with timeframe conversion
-    
-    Args:
-        symbol: Trading symbol (e.g., 'BTCUSDT')
-        interval: Timeframe interval in minutes or timeframe code
-        max_period: Maximum EMA period to calculate (determines how many candles to fetch)
-        
-    Returns:
-        pandas DataFrame with candle data in the requested timeframe
-    """
-    try:
-        # Convert interval to minutes
-        requested_timeframe_minutes = convert_timeframe_to_minutes(interval)
-        
-        # Determine how many database candles to fetch
-        limit = 1000  # Default increased from 500
-        if max_period:
-            # Calculate how many 15m candles we need for the target timeframe
-            candles_per_period = requested_timeframe_minutes // DATABASE_TIMEFRAME_MINUTES
-            # Need enough 15m candles to create max_period candles in target timeframe
-            required_15m_candles = max_period * candles_per_period
-            # Add buffer for EMA calculation warmup
-            limit = min(10000, max(1000, required_15m_candles * 2))
-            
-        # Get database manager and fetch 15-minute data
-        db_mgr = get_db_manager()
-        
-        # Connect to database if not already connected
-        if db_mgr.conn is None:
-            await db_mgr.connect()
-            
-        df_15m = await db_mgr.get_latest_candles(symbol, limit)
-        
-        if df_15m.empty:
-            return pd.DataFrame()
-        
-        # Resample to target timeframe if needed
-        if requested_timeframe_minutes != DATABASE_TIMEFRAME_MINUTES:
-            df = resample_candles_to_timeframe(df_15m, requested_timeframe_minutes)
-        else:
-            df = df_15m
-            
-        return df
-            
-    except Exception as e:
-        logger.error(f"Error fetching DataFrame from database for {symbol}: {str(e)}")
-        return pd.DataFrame() 
+        }, None 

@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 
 from ... import config
-from ..filtering.conditions import matches_filter_conditions, format_condition_text
+from ..filtering.conditions import matches_filter_conditions, format_condition_text, filter_and_sort_results
 from ..utils.numbers import format_number
 
 # Setup logging
@@ -74,29 +74,14 @@ def format_results(results: List[Dict[str, Any]]) -> Tuple[str, int, int]:
     Returns:
         Tuple of (formatted text, matching count, total processed count)
     """
-    # Count total and filter if needed
+    # Count total processed
     total_processed = len(results)
-    matching_results = []
     
-    for data in results:
-        # Skip failures
-        if not data.get("success", False):
-            continue
-            
-        # Check if it matches conditions
-        if matches_filter_conditions(data):
-            matching_results.append(data)
-            
-    # Use either filtered or all results
-    if config.SHOW_ONLY_MATCHING:
-        display_results = matching_results
-    else:
-        # For unfiltered display, still put matches at the top
-        non_matching = [r for r in results if r.get("success", False) and r not in matching_results]
-        display_results = matching_results + non_matching
-        
-    # Sort the results
-    display_results = sort_results(display_results)
+    # Count matching results before filtering
+    matching_count = len([r for r in results if r.get("success", False) and matches_filter_conditions(r)])
+    
+    # Use shared filtering and sorting logic
+    display_results = filter_and_sort_results(results)
     
     # Generate output text
     lines = []
@@ -125,14 +110,14 @@ def format_results(results: List[Dict[str, Any]]) -> Tuple[str, int, int]:
         sort_method = f"% from {period} EMA (Highest first)"
         
     lines.append(f"**Results (Sorted by: {sort_method})**")
-    lines.append(f"**{len(matching_results)}** matching symbols out of **{total_processed}** processed")
+    lines.append(f"**{matching_count}** matching symbols out of **{total_processed}** processed")
     lines.append("")
     
     # If no results, return early
     if not display_results:
         lines.append("*No results to display*")
         output = "\n".join(lines)
-        return output, len(matching_results), total_processed
+        return output, matching_count, total_processed
     
     # Determine periods for display
     periods = config.EMA_PERIODS
@@ -186,4 +171,4 @@ def format_results(results: List[Dict[str, Any]]) -> Tuple[str, int, int]:
     # Join all lines
     output = "\n".join(lines)
     
-    return output, len(matching_results), total_processed 
+    return output, matching_count, total_processed 

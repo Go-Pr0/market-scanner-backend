@@ -1,147 +1,184 @@
-import time
-import random
-from typing import List, Dict, Optional, Any
-
-import pandas as pd
+"""
+Fully diluted market cap service for fetching and caching cryptocurrency data.
+"""
 import requests
 import json
-import numpy as np
-
+import os
+import logging
+from typing import List, Dict, Any, Optional
+from datetime import datetime
 from threading import Lock
 
-from pathlib import Path
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('fully_diluted_service')
 
-# Example user agents to rotate
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
-]
-
-# Optional proxy list — format: {"http": "http://proxy_ip:port", "https": "http://proxy_ip:port"}
-PROXIES_LIST = [
-    # Example:
-    # {"http": "http://127.0.0.1:8080", "https": "http://127.0.0.1:8080"},
-    # Add your proxies here or leave empty for no proxies
-]
-
-DATA_DIR = Path(__file__).resolve().parents[2] / "data"
-DATA_DIR.mkdir(exist_ok=True)
-DATA_FILE = DATA_DIR / "top_500_full.json"
+# Configuration
+COINGECKO_API_URL = "https://api.coingecko.com/api/v3/coins/markets"
+CACHE_FILE = "fully_diluted_cache.json"
+CACHE_EXPIRY_HOURS = 24  # Cache expires after 24 hours
 
 # Cache variables
-_cached_dataset: List[Dict[str, Any]] = []  # full 500 coin dataset with fd_pct added
+_cached_data: List[Dict[str, Any]] = []
 _threshold_cache: Dict[int, List[Dict[str, Any]]] = {}
 _last_update: float = 0.0
 _cache_lock: Lock = Lock()
 
+class FullyDilutedService:
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        
+    def fetch_coingecko_data(self) -> List[Dict[str, Any]]:
+        """Fetch cryptocurrency data from CoinGecko API"""
+        try:
+            params = {
+                'vs_currency': 'usd',
+                'order': 'market_cap_desc',
+                'per_page': 500,  # Increased from 250 to get more coins
+                'page': 1,
+                'sparkline': 'false',
+                'price_change_percentage': '24h'
+            }
+            
+            response = self.session.get(COINGECKO_API_URL, params=params, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            logger.info(f"Fetched {len(data)} coins from CoinGecko")
+            
+            # Process the data to calculate fully diluted percentage
+            processed_data = []
+            for coin in data:
+                # Skip coins without required data
+                if not coin.get('circulating_supply') or not coin.get('max_supply'):
+                    continue
+                    
+                circulating_supply = coin['circulating_supply']
+                max_supply = coin['max_supply']
+                
+                # Calculate fully diluted percentage
+                fully_diluted_percentage = (circulating_supply / max_supply) * 100
+                
+                processed_coin = {
+                    'symbol': coin['symbol'].upper(),
+                    'name': coin['name'],
+                    'current_price': coin['current_price'],
+                    'market_cap': coin['market_cap'],
+                    'fully_diluted_valuation': coin.get('fully_diluted_valuation'),
+                    'circulating_supply': circulating_supply,
+                    'max_supply': max_supply,
+                    'fully_diluted_percentage': fully_diluted_percentage,
+                    'price_change_24h': coin.get('price_change_percentage_24h', 0)
+                }
+                
+                processed_data.append(processed_coin)
+            
+            return processed_data
+            
+        except Exception as e:
+            logger.error(f"Error fetching CoinGecko data: {str(e)}")
+            return []
 
-def _fetch_market_page(page: int, proxies: Optional[Dict] = None) -> pd.DataFrame:
-    """Fetch a single page from CoinGecko markets endpoint with stealth headers and optional proxy."""
-    url = (
-        "https://api.coingecko.com/api/v3/coins/markets"
-        "?vs_currency=usd&order=market_cap_desc&per_page=250"
-        f"&page={page}&sparkline=false&price_change_percentage=24h"
-    )
-    
-    headers = {
-        "User-Agent": random.choice(USER_AGENTS),
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.coingecko.com/",
-        "Connection": "keep-alive",
-    }
-
-    # Rotate proxies if provided, else no proxy
-    proxy = random.choice(PROXIES_LIST) if PROXIES_LIST else None
-
-    response = requests.get(url, headers=headers, proxies=proxy, timeout=30)
-    response.raise_for_status()
-    return pd.DataFrame(response.json())
-
-
-def get_fully_diluted_symbols(threshold: float = 0.85) -> List[str]:
-    """Return a list of coin symbols that meet or exceed the fully-diluted percentage threshold."""
-    dfs = []
-    for page in (1, 2):
-        dfs.append(_fetch_market_page(page))
-        # Random delay between 1.0 and 3.0 seconds to reduce request fingerprinting
-        time.sleep(random.uniform(1.0, 3.0))
-
-    df = pd.concat(dfs)
-    df = df.dropna(subset=["max_supply"])
-    df["fd_pct"] = df["circulating_supply"] / df["max_supply"]
-
-    filtered = df.loc[df["fd_pct"] >= threshold, ["symbol"]]
-
-    return filtered["symbol"].str.lower().tolist()
-
-
-def _fetch_full_dataset() -> pd.DataFrame:
-    """Fetch the top 500 coins (two pages * 250) and compute fd_pct."""
-    dfs = []
-    for page in (1, 2):
-        dfs.append(_fetch_market_page(page))
-        # Light random delay to reduce likelihood of being rate-limited
-        time.sleep(random.uniform(0.8, 2.0))
-
-    df = pd.concat(dfs, ignore_index=True)
-
-    # Only consider coins with max_supply defined, because fd_pct cannot be computed otherwise
-    df = df.dropna(subset=["max_supply"])
-    df["fd_pct"] = df["circulating_supply"] / df["max_supply"]
-
-    # Keep numeric percentage 0-100 as a convenience column
-    df["fd_pct_percent"] = (df["fd_pct"] * 100).round(2)
-
-    # Replace inf/-inf with NaN so they become null in JSON
-    df.replace([np.inf, -np.inf], pd.NA, inplace=True)
-
-    return df
-
-
-def _build_threshold_cache(dataset: List[Dict[str, Any]]) -> Dict[int, List[Dict[str, Any]]]:
-    """Pre-compute lists of coins meeting each 5-percent threshold (0–100)."""
-    cache: Dict[int, List[Dict[str, Any]]] = {}
-    for threshold in range(0, 101, 5):
-        pct = threshold / 100
-        cache[threshold] = sorted(
-            (coin for coin in dataset if coin["fd_pct"] >= pct),
-            key=lambda c: c.get("market_cap_rank", 1e9)
-        )
-    return cache
-
+# Global service instance
+fully_diluted_service = FullyDilutedService()
 
 def update_fully_diluted_cache() -> None:
-    """Fetch full dataset, persist it to disk, and rebuild threshold caches."""
-    global _cached_dataset, _threshold_cache, _last_update
-
+    """Update the cached fully diluted data"""
+    global _cached_data, _threshold_cache, _last_update
+    
     with _cache_lock:
         try:
-            df = _fetch_full_dataset()
-
-            # Persist complete data to JSON (records orientation) – this automatically
-            # converts NaN to null so the stored file is valid JSON.
-            json_records = df.to_json(orient="records")
-            DATA_FILE.write_text(json_records, encoding="utf-8")
-
-            # Build in-memory dataset from the same JSON so NaN → None.
-            dataset = json.loads(json_records)
-
-            _cached_dataset = dataset
-            _threshold_cache = _build_threshold_cache(dataset)
-            _last_update = time.time()
+            # Fetch fresh data
+            data = fully_diluted_service.fetch_coingecko_data()
+            
+            if data:
+                _cached_data = data
+                _last_update = datetime.now().timestamp()
+                
+                # Pre-compute threshold cache for all thresholds (0, 5, 10, ..., 100)
+                _threshold_cache = {}
+                for threshold in range(0, 101, 5):
+                    _threshold_cache[threshold] = [
+                        coin for coin in data 
+                        if coin['fully_diluted_percentage'] >= threshold
+                    ]
+                
+                # Save to file
+                cache_data = {
+                    'data': data,
+                    'last_update': _last_update,
+                    'threshold_cache': _threshold_cache
+                }
+                
+                with open(CACHE_FILE, 'w') as f:
+                    json.dump(cache_data, f, indent=2)
+                
+                logger.info(f"Fully diluted cache updated with {len(data)} coins")
+                
         except Exception as exc:
-            print(f"[fully_diluted_service] Failed to refresh cache: {exc}")
+            logger.error(f"Failed to refresh fully diluted cache: {exc}")
 
+def load_fully_diluted_cache() -> bool:
+    """Load cached data from file"""
+    global _cached_data, _threshold_cache, _last_update
+    
+    try:
+        if os.path.exists(CACHE_FILE):
+            with open(CACHE_FILE, 'r') as f:
+                cache_data = json.load(f)
+                
+            _cached_data = cache_data.get('data', [])
+            _last_update = cache_data.get('last_update', 0.0)
+            _threshold_cache = cache_data.get('threshold_cache', {})
+            
+            # Convert string keys back to integers
+            _threshold_cache = {int(k): v for k, v in _threshold_cache.items()}
+            
+            logger.info(f"Loaded {len(_cached_data)} coins from cache")
+            return True
+            
+    except Exception as e:
+        logger.error(f"Error loading cache: {str(e)}")
+        
+    return False
 
 def get_cached_coins_by_threshold(threshold: int) -> List[Dict[str, Any]]:
-    """Return cached coins whose fd_pct >= threshold/100.
-
-    If cache is empty (e.g., app just started), an empty list is returned.
     """
-    # Clamp to valid multiples of 5 between 0 and 100 to guard against incorrect calls
+    Get cached coins with fully diluted percentage >= threshold
+    
+    Args:
+        threshold: Minimum fully diluted percentage (0-100, must be multiple of 5)
+        
+    Returns:
+        List of coins meeting the criteria
+    """
+    # Validate threshold
     if threshold not in range(0, 101, 5):
-        raise ValueError("Threshold must be one of 0, 5, 10, …, 100")
+        raise ValueError("Threshold must be 0, 5, 10, ..., 100")
+    
+    # Load cache if not loaded
+    if not _cached_data:
+        load_fully_diluted_cache()
+    
+    # Check if cache is stale
+    if datetime.now().timestamp() - _last_update > CACHE_EXPIRY_HOURS * 3600:
+        logger.info("Cache is stale, updating...")
+        update_fully_diluted_cache()
+    
+    # Return cached results
+    return _threshold_cache.get(threshold, [])
 
-    return list(_threshold_cache.get(threshold, []))
+def get_cached_fully_diluted_data() -> List[Dict[str, Any]]:
+    """Return all cached fully diluted data"""
+    return list(_cached_data)
+
+def get_cache_last_updated() -> float:
+    """Return the timestamp of the last cache update"""
+    return _last_update
+
+# Initialize cache on import
+if not load_fully_diluted_cache():
+    logger.info("No cache found, will update on first request")

@@ -5,7 +5,7 @@ from typing import Dict, List, Any, Optional, Sequence
 
 from ... import config
 from ... import symbols
-from .fetcher import fetch_kline_data_async, get_candle_dataframe, convert_timeframe_to_minutes
+from .fetcher import fetch_kline_data_async, convert_timeframe_to_minutes
 from ..calculation.ema import calculate_all_emas
 
 # Setup logging
@@ -45,7 +45,9 @@ async def process_symbol_batch(symbols: List[str], interval: str = "240", period
     # Process each result to calculate EMAs and percentages
     processed_results = []
     
-    for result in results:
+    for result_tuple in results:
+        result, df = result_tuple
+        
         # Skip if there was an error fetching data
         if not result.get("success", False):
             processed_results.append(result)
@@ -61,11 +63,8 @@ async def process_symbol_batch(symbols: List[str], interval: str = "240", period
             # Get current price
             current_price = result["price"]
             
-            # Get candle data for EMA calculation
-            df = await get_candle_dataframe(symbol, interval, max_period)
-            
-            # Skip if no data available
-            if df.empty:
+            # Skip if no DataFrame was returned (shouldn't happen if success=True, but safety check)
+            if df is None or df.empty:
                 logger.warning(f"No data available for EMA calculation for {symbol}")
                 result["success"] = False
                 result["error"] = "No candle data available for EMA calculation"

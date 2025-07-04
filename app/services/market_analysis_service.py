@@ -3,18 +3,24 @@ Market analysis service for calculating top gainers, losers, and most active tra
 """
 import asyncio
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 import pandas as pd
 from threading import Lock
 
 from app.bybit_data_fetcher.database.db_manager import DatabaseManager
-from app.bybit_data_fetcher.config.settings import DATABASE_PATH
-from app.bybit_data_fetcher.config.candle_monitor_config import get_trading_pairs
+from app.core.symbols import get_trading_symbols
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('market_analysis_service')
+
+# Database path configuration
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_backend_dir = os.path.dirname(_current_dir)
+_database_dir = os.path.join(_backend_dir, "bybit_data_fetcher", "database")
+DATABASE_PATH = os.path.join(_database_dir, "bybit_market_data.db")
 
 # Cache variables
 _cached_gainers: List[Dict[str, Any]] = []
@@ -104,7 +110,7 @@ class MarketAnalysisService:
             await self.connect()
             
             # Get all trading pairs
-            trading_pairs = get_trading_pairs()
+            trading_pairs = get_trading_symbols()
             
             # Calculate stats for all pairs
             all_stats = []
@@ -184,4 +190,20 @@ def get_cached_market_analysis() -> Dict[str, List[Dict[str, Any]]]:
         'top_losers': list(_cached_losers),
         'most_active': list(_cached_most_active),
         'last_updated': _last_update
-    } 
+    }
+
+def get_cached_gainers() -> List[Dict[str, Any]]:
+    """Return only the cached top gainers data."""
+    return list(_cached_gainers)
+
+def get_cached_losers() -> List[Dict[str, Any]]:
+    """Return only the cached top losers data."""
+    return list(_cached_losers)
+
+def get_cached_most_active() -> List[Dict[str, Any]]:
+    """Return only the cached most active data."""
+    return list(_cached_most_active)
+
+def get_cache_last_updated() -> float:
+    """Return the timestamp of the last cache update."""
+    return _last_update 

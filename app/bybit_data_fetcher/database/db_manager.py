@@ -7,13 +7,14 @@ import pandas as pd
 from datetime import datetime
 import logging
 import asyncio
+from typing import Optional, List, Dict, Any
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('db_manager')
 
 class DatabaseManager:
-    def __init__(self, db_path):
+    def __init__(self, db_path: str):
         """Initialize database manager."""
         self.db_path = db_path
         self.conn = None
@@ -24,7 +25,7 @@ class DatabaseManager:
         """Connect to the database."""
         if self.conn is None:
             self.conn = await aiosqlite.connect(self.db_path)
-            await self._create_tables()
+            await self.create_tables()
 
     async def close(self):
         """Close the database connection."""
@@ -32,153 +33,150 @@ class DatabaseManager:
             await self.conn.close()
             self.conn = None
 
-    async def _create_tables(self):
-        """Create necessary tables if they don't exist."""
-        async with self.conn.cursor() as cursor:
-            # Create table for candle data
-            await cursor.execute('''
-            CREATE TABLE IF NOT EXISTS candle_data (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL,
-                timestamp INTEGER NOT NULL,
-                open REAL NOT NULL,
-                high REAL NOT NULL,
-                low REAL NOT NULL,
-                close REAL NOT NULL,
-                volume REAL NOT NULL,
-                turnover REAL NOT NULL,
-                UNIQUE(symbol, timestamp)
-            )
-            ''')
-            
-            # Create index for faster queries
-            await cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_symbol_timestamp ON candle_data (symbol, timestamp)
-            ''')
+    async def create_tables(self):
+        """Create the candle_data table if it doesn't exist"""
+        create_table_sql = """
+        CREATE TABLE IF NOT EXISTS candle_data (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            timestamp INTEGER NOT NULL,
+            open REAL NOT NULL,
+            high REAL NOT NULL,
+            low REAL NOT NULL,
+            close REAL NOT NULL,
+            volume REAL NOT NULL,
+            turnover REAL NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, timestamp)
+        )
+        """
         
+        await self.conn.execute(create_table_sql)
+        
+        # Create index for faster queries
+        index_sql = """
+        CREATE INDEX IF NOT EXISTS idx_symbol_timestamp 
+        ON candle_data (symbol, timestamp)
+        """
+        await self.conn.execute(index_sql)
         await self.conn.commit()
+        logger.debug("Tables and indexes created/verified")
 
-    async def get_latest_candle_timestamp(self, symbol):
-        """Get the timestamp of the latest candle for a given symbol."""
-        async with self.conn.cursor() as cursor:
-            await cursor.execute('''
-            SELECT MAX(timestamp) FROM candle_data WHERE symbol = ?
-            ''', (symbol,))
+    async def save_candles(self, symbol: str, candles_df: pd.DataFrame) -> int:
+        """
+        Save candles to the database
+        
+        Args:
+            symbol: Trading symbol
+            candles_df: DataFrame with candle data
             
-            result = await cursor.fetchone()
-            return result[0] if result and result[0] else None
-
-    async def get_candle_count(self, symbol):
-        """Get the total number of candles for a given symbol."""
-        async with self.conn.cursor() as cursor:
-            await cursor.execute('''
-            SELECT COUNT(*) FROM candle_data WHERE symbol = ?
-            ''', (symbol,))
-            
-            result = await cursor.fetchone()
-            return result[0] if result and result[0] else 0
-
-    async def get_earliest_candle_timestamp(self, symbol):
-        """Get the timestamp of the earliest candle for a given symbol."""
-        async with self.conn.cursor() as cursor:
-            await cursor.execute('''
-            SELECT MIN(timestamp) FROM candle_data WHERE symbol = ?
-            ''', (symbol,))
-            
-            result = await cursor.fetchone()
-            return result[0] if result and result[0] else None
-
-    async def save_candles(self, symbol, candles_df):
-        """Save candle data to the database."""
+        Returns:
+            Number of new candles saved
+        """
         if candles_df.empty:
-            logger.warning(f"No candles to save for {symbol}")
             return 0
-        
-        # Make a copy to avoid modifying the original DataFrame
-        df = candles_df.copy()
-        
-        # Convert timestamp to milliseconds if it's in datetime format
-        if pd.api.types.is_datetime64_any_dtype(df['timestamp']):
-            df['timestamp'] = df['timestamp'].astype(int) // 10**6
-        
-        try:
-            # Add symbol to the DataFrame
-            df['symbol'] = symbol
+            
+        # Ensure timestamp column is int milliseconds
+        ts_col = candles_df['timestamp']
+        if pd.api.types.is_datetime64_any_dtype(ts_col):
+            candles_df = candles_df.copy()
+            candles_df['timestamp'] = (candles_df['timestamp'].astype('int64') // 10**6)
+        else:
+            # if it's already numeric but in seconds, detect heuristic (<1e12) then multiply by 1000
+            if ts_col.dtype.kind in {'i','u','f'} and ts_col.max() < 1e12:
+                candles_df = candles_df.copy()
+                candles_df['timestamp'] = candles_df['timestamp'] * 1000
 
-            # Prepare data for insertion
-            cols = ['symbol', 'timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover']
-            to_insert = [tuple(x) for x in df[cols].to_numpy()]
-
-            # Use executemany for batch insert
-            async with self.conn.cursor() as cursor:
-                await cursor.executemany('''
-                INSERT OR IGNORE INTO candle_data 
-                (symbol, timestamp, open, high, low, close, volume, turnover)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''', to_insert)
-                
-                await self.conn.commit()
-                count = cursor.rowcount
-                
-            logger.info(f"Saved {count} new candles for {symbol}")
-            return count
-        except Exception as e:
-            logger.error(f"Error saving candles for {symbol}: {str(e)}")
-            try:
-                await self.conn.rollback()
-            except:
-                pass
-            return 0
-
-    async def get_candle_range(self, symbol, start_timestamp=None, end_timestamp=None, limit=1000):
-        """Get a range of candles for a symbol."""
-        async with self.conn.cursor() as cursor:
-            query = '''
-            SELECT timestamp, open, high, low, close, volume, turnover
-            FROM candle_data
-            WHERE symbol = ?
-            '''
-            params = [symbol]
-            
-            if start_timestamp:
-                query += ' AND timestamp >= ?'
-                params.append(start_timestamp)
-            
-            if end_timestamp:
-                query += ' AND timestamp <= ?'
-                params.append(end_timestamp)
-            
-            query += ' ORDER BY timestamp ASC LIMIT ?'
-            params.append(limit)
-            
-            await cursor.execute(query, tuple(params))
-            
-            rows = await cursor.fetchall()
-            if not rows:
-                return pd.DataFrame()
-            
-            df = pd.DataFrame(rows, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            return df
+        # Convert DataFrame to list of tuples for insertion
+        candles_data = [
+            (
+                symbol,
+                int(row['timestamp']),
+                float(row['open']),
+                float(row['high']),
+                float(row['low']),
+                float(row['close']),
+                float(row['volume']),
+                float(row['turnover'])
+            )
+            for _, row in candles_df.iterrows()
+        ]
+        
+        # Insert candles with IGNORE to handle duplicates
+        insert_sql = """
+        INSERT OR IGNORE INTO candle_data 
+        (symbol, timestamp, open, high, low, close, volume, turnover)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        
+        cursor = await self.conn.executemany(insert_sql, candles_data)
+        await self.conn.commit()
+        
+        new_candles = cursor.rowcount
+        logger.debug(f"Saved {new_candles} new candles for {symbol}")
+        return new_candles
     
-    async def get_latest_candles(self, symbol, limit=1000):
-        """Get the latest N candles for a symbol (most recent first)."""
-        async with self.conn.cursor() as cursor:
-            await cursor.execute('''
-            SELECT timestamp, open, high, low, close, volume, turnover
-            FROM candle_data
-            WHERE symbol = ?
-            ORDER BY timestamp DESC
-            LIMIT ?
-            ''', (symbol, limit))
-            
-            rows = await cursor.fetchall()
-            if not rows:
-                return pd.DataFrame()
-            
-            df = pd.DataFrame(rows, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            
-            # Sort by timestamp ascending (oldest first) for EMA calculations
-            df = df.sort_values('timestamp')
-            return df
+    async def get_latest_candle_timestamp(self, symbol: str) -> Optional[int]:
+        """Get the timestamp of the latest candle for a symbol"""
+        query = """
+        SELECT MAX(timestamp) FROM candle_data 
+        WHERE symbol = ?
+        """
+        
+        cursor = await self.conn.execute(query, (symbol,))
+        result = await cursor.fetchone()
+        
+        if result and result[0]:
+            return int(result[0])
+        return None
+    
+    async def get_latest_candles(self, symbol: str, limit: int = 1000) -> pd.DataFrame:
+        """Get the latest candles for a symbol"""
+        query = """
+        SELECT timestamp, open, high, low, close, volume, turnover
+        FROM candle_data 
+        WHERE symbol = ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+        """
+        
+        cursor = await self.conn.execute(query, (symbol, limit))
+        rows = await cursor.fetchall()
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        # Create DataFrame
+        df = pd.DataFrame(rows, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+        
+        # Convert timestamp to datetime
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        
+        # Sort by timestamp ascending (oldest first)
+        df = df.sort_values('timestamp')
+        
+        return df
+    
+    async def get_candle_range(self, symbol: str, start_timestamp: int, end_timestamp: int, limit: int = 1000) -> pd.DataFrame:
+        """Get candles within a timestamp range"""
+        query = """
+        SELECT timestamp, open, high, low, close, volume, turnover
+        FROM candle_data 
+        WHERE symbol = ? AND timestamp >= ? AND timestamp <= ?
+        ORDER BY timestamp ASC
+        LIMIT ?
+        """
+        
+        cursor = await self.conn.execute(query, (symbol, start_timestamp, end_timestamp, limit))
+        rows = await cursor.fetchall()
+        
+        if not rows:
+            return pd.DataFrame()
+        
+        # Create DataFrame
+        df = pd.DataFrame(rows, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+        
+        # Convert timestamp to datetime
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        
+        return df

@@ -9,9 +9,6 @@ class FullyDilutedCoin(BaseModel):
     max_supply: float = Field(..., description="Maximum supply of the coin")
     fd_pct: float = Field(..., description="Percentage of coins in circulation relative to max supply")
 
-class FullyDilutedResponse(BaseModel):
-    coins: List[FullyDilutedCoin]
-
 class TradingPairStats(BaseModel):
     symbol: str = Field(..., description="Trading pair symbol")
     open_24h: float = Field(..., description="Opening price 24 hours ago")
