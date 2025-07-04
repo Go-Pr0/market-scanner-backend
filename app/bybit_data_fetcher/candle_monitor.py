@@ -34,6 +34,11 @@ from database.db_manager import DatabaseManager
 from api.bybit_client import BybitClient
 from utils.data_fetcher import DataFetcher
 
+# Ensure the log directory exists before setting up logging
+log_dir = os.path.dirname(LOG_FILE)
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+
 # Setup logging
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
@@ -173,9 +178,6 @@ async def main():
     # Set up signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
-    # Create logs directory if it doesn't exist
-    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     
     # Reset database if configured
     if RESET_DB_ON_START and os.path.exists(DATABASE_PATH):

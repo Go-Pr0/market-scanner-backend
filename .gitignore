@@ -136,10 +136,11 @@ dmypy.json
 *.json
 *.db
 *.sqlite3
-data/
+/data/
+!/app/trendspider/modules/data/
 
 # Logs
-logs/
+/logs/
 *.log
 
 # OS generated files
