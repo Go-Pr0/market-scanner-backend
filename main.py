@@ -7,6 +7,9 @@ from fastapi.concurrency import run_in_threadpool
 from app.core.config import settings
 from app.routers import health, market, trendspider
 
+# Import AI router
+from app.routers import ai as ai_router
+
 # Create FastAPI application instance
 app = FastAPI(title=settings.app_name, version=settings.version)
 
@@ -23,6 +26,8 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(market.router)
 app.include_router(trendspider.router)
+# AI endpoints
+app.include_router(ai_router.router)
 
 
 # ---------------------------------------------------------------------------
