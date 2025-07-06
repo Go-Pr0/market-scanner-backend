@@ -18,6 +18,7 @@ from app.models.ai_assistant import (
     ChatMessage,
     ChatSession
 )
+from app.models.user import User
 
 # ---------------------------------------------------------------------------
 # Pydantic models for backward compatibility
@@ -59,7 +60,7 @@ router = APIRouter(prefix="/api", tags=["AI"])
 @router.post("/questions/generate", response_model=GenerateQuestionsResponse)
 async def generate_questions(
     request: GenerateQuestionsRequest,
-    _: bool = Depends(require_auth),
+    current_user: User = Depends(require_auth),
 ):
     """Tailor the next 3 AI-driven questions based on the already answered ones."""
     try:
@@ -75,12 +76,13 @@ async def generate_questions(
 @router.post("/chat/message", response_model=ChatMessageResponse)
 async def send_chat_message(
     request: ChatMessageRequest,
-    _: bool = Depends(require_auth),
+    current_user: User = Depends(require_auth),
 ):
     """Send a message to the AI assistant."""
     try:
         chat_session, ai_message = await run_in_threadpool(
             ai_assistant_service.send_chat_message,
+            current_user.id,
             request.message,
             request.chat_id,
             request.status,
@@ -101,12 +103,13 @@ async def send_chat_message(
 @router.get("/chat/recent", response_model=ChatListResponse)
 async def get_recent_chats(
     limit: int = 50,
-    _: bool = Depends(require_auth),
+    current_user: User = Depends(require_auth),
 ):
     """Get recent chat sessions."""
     try:
         chats = await run_in_threadpool(
             ai_assistant_service.get_recent_chats,
+            current_user.id,
             limit
         )
         return ChatListResponse(chats=chats)
@@ -117,13 +120,14 @@ async def get_recent_chats(
 @router.get("/chat/{chat_id}/history", response_model=ChatHistoryResponse)
 async def get_chat_history(
     chat_id: str,
-    _: bool = Depends(require_auth),
+    current_user: User = Depends(require_auth),
 ):
     """Get complete chat history for a specific chat."""
     try:
         result = await run_in_threadpool(
             ai_assistant_service.get_chat_history,
-            chat_id
+            chat_id,
+            current_user.id
         )
         
         if not result:
@@ -140,13 +144,14 @@ async def get_chat_history(
 @router.delete("/chat/{chat_id}")
 async def delete_chat(
     chat_id: str,
-    _: bool = Depends(require_auth),
+    current_user: User = Depends(require_auth),
 ):
     """Delete a chat session."""
     try:
         success = await run_in_threadpool(
             ai_assistant_service.delete_chat,
-            chat_id
+            chat_id,
+            current_user.id
         )
         
         if not success:
@@ -163,12 +168,13 @@ async def delete_chat(
 @router.post("/chat/advisor", response_model=ChatAdvisorResponse)
 async def chat_advisor(
     request: ChatAdvisorRequest,
-    _: bool = Depends(require_auth),
+    current_user: User = Depends(require_auth),
 ):
     """Legacy AI chat interaction endpoint (for backward compatibility)."""
     try:
         chat_session, ai_message = await run_in_threadpool(
             ai_assistant_service.send_chat_message,
+            current_user.id,
             request.message,
             request.conversation_id,
             request.status,

@@ -1,8 +1,10 @@
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
-import os
 import logging
+
+from app.models.user import User
+from app.services.auth_service import auth_service
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -10,55 +12,87 @@ logger = logging.getLogger(__name__)
 # Security scheme for API endpoints
 security = HTTPBearer(auto_error=False)
 
-def get_access_token():
-    """Get the access token from environment variables."""
-    return os.getenv("ACCESS_PASSWORD")
 
-async def verify_access_token(request: Request) -> bool:
+async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> User:
     """
-    Verify the access token from the request headers.
+    Get the current authenticated user from JWT token.
     
     Args:
-        request: The FastAPI request object
+        credentials: HTTP Bearer credentials from the request
         
     Returns:
-        bool: True if the token is valid, False otherwise
+        User: The authenticated user
         
     Raises:
         HTTPException: If the token is invalid or missing
     """
-    # Get the access token from environment
-    expected_token = get_access_token()
-    
-    if not expected_token:
-        logger.critical("FATAL: ACCESS_PASSWORD environment variable is not set. API cannot start securely.")
+    if not credentials:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="API is not configured for authentication. Please contact the administrator."
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Check for the custom header
-    access_token = request.headers.get("X-Access-Token")
-    
-    if not access_token:
+    user = auth_service.get_current_user(credentials.credentials)
+    if not user:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access token required"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     
-    if access_token != expected_token:
+    if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid access token"
+            detail="User account is deactivated"
         )
     
-    return True
+    return user
+
+
+async def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> Optional[User]:
+    """
+    Get the current authenticated user from JWT token (optional).
+    
+    Args:
+        credentials: HTTP Bearer credentials from the request
+        
+    Returns:
+        User or None: The authenticated user or None if not authenticated
+    """
+    if not credentials:
+        return None
+    
+    user = auth_service.get_current_user(credentials.credentials)
+    if not user or not user.is_active:
+        return None
+    
+    return user
+
 
 # FastAPI dependency for route protection
-async def require_auth(request: Request):
+async def require_auth(current_user: User = Depends(get_current_user)) -> User:
     """
     FastAPI dependency that requires authentication.
     Use this as a dependency in your route handlers.
+    
+    Returns:
+        User: The authenticated user
     """
-    await verify_access_token(request)
-    return True 
+    return current_user
+
+
+# Legacy function for backward compatibility during migration
+async def verify_access_token_legacy(request) -> bool:
+    """
+    Legacy token verification for backward compatibility.
+    This will be removed after full migration to JWT.
+    """
+    import os
+    
+    expected_token = os.getenv("ACCESS_PASSWORD")
+    if not expected_token:
+        return False
+    
+    access_token = request.headers.get("X-Access-Token")
+    return access_token == expected_token 

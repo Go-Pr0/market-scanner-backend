@@ -5,7 +5,7 @@ import asyncio
 from fastapi.concurrency import run_in_threadpool
 
 from app.core.config import settings
-from app.routers import health, market, trendspider
+from app.routers import health, market, trendspider, auth
 
 # Import AI router
 from app.routers import ai as ai_router
@@ -26,6 +26,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(market.router)
 app.include_router(trendspider.router)
+app.include_router(auth.router)
 # AI endpoints
 app.include_router(ai_router.router)
 
@@ -67,6 +68,10 @@ async def _market_analysis_cache_refresher() -> None:
 # Register startup event to launch background tasks
 @app.on_event("startup")
 async def start_background_tasks() -> None:
+    # Initialize User database
+    from app.services.user_db import user_db
+    # Database is initialized automatically when imported
+    
     # Initialize AI Assistant database
     from app.services.ai_assistant_db import ai_assistant_db
     # Database is initialized automatically when imported

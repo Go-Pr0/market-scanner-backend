@@ -54,6 +54,7 @@ class AIAssistantDB:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS chat_sessions (
                     id TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
                     title TEXT,
                     status TEXT NOT NULL,
                     context_data TEXT,
@@ -92,10 +93,26 @@ class AIAssistantDB:
                 ON chat_sessions (updated_at)
             """)
             
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id 
+                ON chat_sessions (user_id)
+            """)
+            
+            # Check if user_id column exists, if not add it (migration)
+            cursor = conn.execute("PRAGMA table_info(chat_sessions)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'user_id' not in columns:
+                logger.info("Adding user_id column to chat_sessions table")
+                conn.execute("ALTER TABLE chat_sessions ADD COLUMN user_id INTEGER")
+                # Set a default user_id for existing sessions (will be 0 for legacy data)
+                conn.execute("UPDATE chat_sessions SET user_id = 0 WHERE user_id IS NULL")
+            
             conn.commit()
     
     def create_chat_session(
         self, 
+        user_id: int,
         status: str, 
         context_data: Optional[Dict[str, Any]] = None,
         title: Optional[str] = None
@@ -106,10 +123,11 @@ class AIAssistantDB:
         
         with self._get_connection() as conn:
             conn.execute("""
-                INSERT INTO chat_sessions (id, title, status, context_data, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO chat_sessions (id, user_id, title, status, context_data, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 chat_id,
+                user_id,
                 title,
                 status,
                 json.dumps(context_data) if context_data else None,
@@ -128,12 +146,17 @@ class AIAssistantDB:
             is_active=True
         )
     
-    def get_chat_session(self, chat_id: str) -> Optional[ChatSession]:
-        """Get a chat session by ID."""
+    def get_chat_session(self, chat_id: str, user_id: Optional[int] = None) -> Optional[ChatSession]:
+        """Get a chat session by ID, optionally filtered by user."""
         with self._get_connection() as conn:
-            row = conn.execute("""
-                SELECT * FROM chat_sessions WHERE id = ? AND is_active = 1
-            """, (chat_id,)).fetchone()
+            if user_id is not None:
+                row = conn.execute("""
+                    SELECT * FROM chat_sessions WHERE id = ? AND user_id = ? AND is_active = 1
+                """, (chat_id, user_id)).fetchone()
+            else:
+                row = conn.execute("""
+                    SELECT * FROM chat_sessions WHERE id = ? AND is_active = 1
+                """, (chat_id,)).fetchone()
             
             if not row:
                 return None
@@ -249,15 +272,15 @@ class AIAssistantDB:
             
             return messages
     
-    def get_recent_chats(self, limit: int = 50) -> List[ChatSession]:
-        """Get recent chat sessions ordered by updated_at."""
+    def get_recent_chats(self, user_id: int, limit: int = 50) -> List[ChatSession]:
+        """Get recent chat sessions for a user ordered by updated_at."""
         with self._get_connection() as conn:
             rows = conn.execute("""
                 SELECT * FROM chat_sessions 
-                WHERE is_active = 1
+                WHERE user_id = ? AND is_active = 1
                 ORDER BY updated_at DESC
                 LIMIT ?
-            """, (limit,)).fetchall()
+            """, (user_id, limit)).fetchall()
             
             chats = []
             for row in rows:
@@ -291,9 +314,9 @@ class AIAssistantDB:
             conn.commit()
             return cursor.rowcount > 0
     
-    def get_chat_history(self, chat_id: str) -> Optional[Tuple[ChatSession, List[ChatMessage]]]:
+    def get_chat_history(self, chat_id: str, user_id: Optional[int] = None) -> Optional[Tuple[ChatSession, List[ChatMessage]]]:
         """Get complete chat history (session + messages)."""
-        chat_session = self.get_chat_session(chat_id)
+        chat_session = self.get_chat_session(chat_id, user_id)
         if not chat_session:
             return None
         

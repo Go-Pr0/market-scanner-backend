@@ -44,7 +44,7 @@ def generate_questions(answered: List[Dict[str, str]]) -> List[str]:
     prompt = f"{prompts.GENERATE_QUESTIONS_PROMPT}\n\nPREVIOUS ANSWERS:\n{json.dumps(answered, indent=2)}"
 
     response = client.models.generate_content(
-        model="gemini-2.5-pro-preview-06-05",
+        model="gemini-2.5-flash",
         contents=prompt,
     )
 
@@ -103,6 +103,7 @@ def _build_message_history(messages: List[ChatMessage]) -> List[Dict[str, str]]:
 
 
 def send_chat_message(
+    user_id: int,
     message: str,
     chat_id: Optional[str] = None,
     status: Optional[str] = None,
@@ -111,6 +112,7 @@ def send_chat_message(
     """Send a message to the AI assistant and get a response.
     
     Args:
+        user_id: ID of the user sending the message
         message: User message content
         chat_id: Existing chat ID to continue conversation
         status: Chat status for new chats ('pre-trade' or 'management')
@@ -123,9 +125,9 @@ def send_chat_message(
     
     # Get or create chat session
     if chat_id:
-        chat_session = ai_assistant_db.get_chat_session(chat_id)
+        chat_session = ai_assistant_db.get_chat_session(chat_id, user_id)
         if not chat_session:
-            raise ValueError(f"Chat session {chat_id} not found")
+            raise ValueError(f"Chat session {chat_id} not found or access denied")
         is_new_chat = False
     else:
         if not status:
@@ -134,6 +136,7 @@ def send_chat_message(
         # Generate title from first message
         title = _generate_chat_title(message, status)
         chat_session = ai_assistant_db.create_chat_session(
+            user_id=user_id,
             status=status,
             context_data=context_data,
             title=title
@@ -160,7 +163,7 @@ def send_chat_message(
         
         # Send system message and user message together
         response = client.models.generate_content(
-            model="gemini-2.5-pro-preview-06-05",
+            model="gemini-2.5-flash",
             contents=[
                 {"role": "user", "parts": [{"text": system_message}]},
                 {"role": "user", "parts": [{"text": message}]}
@@ -200,7 +203,7 @@ def send_chat_message(
         })
         
         response = client.models.generate_content(
-            model="gemini-2.5-pro-preview-06-05",
+            model="gemini-2.5-flash",
             contents=conversation_history
         )
     
@@ -217,16 +220,21 @@ def send_chat_message(
     return chat_session, ai_message
 
 
-def get_chat_history(chat_id: str) -> Optional[Tuple[ChatSession, List[ChatMessage]]]:
-    """Get complete chat history."""
-    return ai_assistant_db.get_chat_history(chat_id)
+def get_chat_history(chat_id: str, user_id: int) -> Optional[Tuple[ChatSession, List[ChatMessage]]]:
+    """Get complete chat history for a user."""
+    return ai_assistant_db.get_chat_history(chat_id, user_id)
 
 
-def get_recent_chats(limit: int = 50) -> List[ChatSession]:
-    """Get recent chat sessions."""
-    return ai_assistant_db.get_recent_chats(limit)
+def get_recent_chats(user_id: int, limit: int = 50) -> List[ChatSession]:
+    """Get recent chat sessions for a user."""
+    return ai_assistant_db.get_recent_chats(user_id, limit)
 
 
-def delete_chat(chat_id: str) -> bool:
-    """Delete a chat session."""
+def delete_chat(chat_id: str, user_id: int) -> bool:
+    """Delete a chat session for a user."""
+    # Verify the chat belongs to the user before deleting
+    chat_session = ai_assistant_db.get_chat_session(chat_id, user_id)
+    if not chat_session:
+        return False
+    
     return ai_assistant_db.delete_chat_session(chat_id)
