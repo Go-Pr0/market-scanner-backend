@@ -67,6 +67,10 @@ async def _market_analysis_cache_refresher() -> None:
 # Register startup event to launch background tasks
 @app.on_event("startup")
 async def start_background_tasks() -> None:
+    # Initialize AI Assistant database
+    from app.services.ai_assistant_db import ai_assistant_db
+    # Database is initialized automatically when imported
+    
     # Initialize TrendSpider module
     trendspider_setup()
     

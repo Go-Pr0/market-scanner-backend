@@ -71,7 +71,7 @@ def generate_questions(answered: List[Dict[str, str]]) -> List[str]:
     prompt = f"{prompts.GENERATE_QUESTIONS_PROMPT}\n\nPREVIOUS ANSWERS:\n{json.dumps(answered, indent=2)}"
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-2.5-pro-preview-06-05",
         contents=prompt,
     )
 
@@ -156,7 +156,7 @@ def chat_advisor(
         if data is None:
             raise ValueError("'data' field is required when starting a new conversation.")
 
-        chat_obj = client.chats.create(model="gemini-2.5-flash")
+        chat_obj = client.chats.create(model="gemini-2.5-pro-preview-06-05")
         system_msg = prompts.build_chat_advisor_system_message(status, data)
         chat_obj.send_message(system_msg)
 

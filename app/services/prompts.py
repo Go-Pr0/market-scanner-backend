@@ -75,7 +75,7 @@ def build_chat_advisor_system_message(status: str, data: Dict[str, Any]) -> str:
             "You are an AI assistant helping a trader evaluate an **existing** "
             "open position for continuation, adjustment, or exit."
             "Ask me about my management plan for this trade, and why I want to alter anything"
-            "Then."
+            ""
         )
     else:  # Default to "pre-trade"
         role_instruction = (
@@ -83,19 +83,23 @@ def build_chat_advisor_system_message(status: str, data: Dict[str, Any]) -> str:
             "before entry. Ask me about my trading plan, and why I want to enter this trade."
             "Ask me things such as: if I planned the trade beforehand,etc. Focus on my mentality"
             "& space of mind while going into this trade, tailor your questions to that."
-            "Do not focus on the technicals."
+            "Do not focus on the technicals whatsoever."
         )
 
     system_context = (
+        "//START QUESTIONNAIRE"
         f"{role_instruction}\n\n"
+        "//END QUESTIONNAIRE"
         f"This is a questionnaire that I filled out with some things I have been working on:\n"
         f"{json.dumps(data, indent=2)}\n\n"
         "The goal here should be to help me reflect on the objective I stated at the start before I perform this action."
-        "Help me think though everything, ask me whether or not it's within my trading plan."
-        "Keep the conversation going, and ask me questions about what I asked you to ask me."
+        "Help me think though key items, ask me whether or not it's within my trading plan."
+        "Keep the conversation going for approx 4 turns you will see in the context and then start finishing up gradually"
+        "and ask me questions about what I asked you to ask me."
         "do NOT mention risk management, and just head straight in from here, returning"
         "only the answer, and not refering to what I just said."
         "keep the conversation going until we reach a conclusion."
-        "Start the convo, only ask one question at a time."
+        "Ask each question one by one"
+        "Start the convo, only ask one question at a time. Make sure to focus on what I am saying."
     )
     return system_context
