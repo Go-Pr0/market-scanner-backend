@@ -5,6 +5,7 @@ import requests
 import json
 import os
 import logging
+import time  # NEW: for polite rate-limiting
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from threading import Lock
@@ -31,53 +32,70 @@ class FullyDilutedService:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
         
-    def fetch_coingecko_data(self) -> List[Dict[str, Any]]:
-        """Fetch cryptocurrency data from CoinGecko API"""
+    def fetch_coingecko_data(self, pages: int = 2, delay: float = 1.2) -> List[Dict[str, Any]]:
+        """Fetch cryptocurrency data from multiple CoinGecko pages.
+
+        Args:
+            pages: How many pages of 250 coins to request (CoinGecko max page size).
+            delay: Seconds to wait between requests to respect API rate limits.
+        """
         try:
-            params = {
-                'vs_currency': 'usd',
-                'order': 'market_cap_desc',
-                'per_page': 500,  # Increased from 250 to get more coins
-                'page': 1,
-                'sparkline': 'false',
-                'price_change_percentage': '24h'
-            }
-            
-            response = self.session.get(COINGECKO_API_URL, params=params, timeout=30)
-            response.raise_for_status()
-            
-            data = response.json()
-            logger.info(f"Fetched {len(data)} coins from CoinGecko")
-            
+            all_coins: List[Dict[str, Any]] = []
+
+            for page in range(1, pages + 1):
+                params = {
+                    'vs_currency': 'usd',
+                    'order': 'market_cap_desc',
+                    'per_page': 250,  # CoinGecko maximum page size
+                    'page': page,
+                    'sparkline': 'false',
+                    'price_change_percentage': '24h'
+                }
+
+                response = self.session.get(COINGECKO_API_URL, params=params, timeout=30)
+                response.raise_for_status()
+
+                page_data = response.json()
+                logger.info(f"Fetched {len(page_data)} coins from CoinGecko page {page}")
+                all_coins.extend(page_data)
+
+                # If we received fewer than requested items, we've reached the end.
+                if len(page_data) < 250:
+                    break
+
+                # Be courteous – avoid hitting the rate limit.
+                time.sleep(delay)
+
+            logger.info(f"Total coins fetched across pages: {len(all_coins)}")
+
             # Process the data to calculate fully diluted percentage
-            processed_data = []
-            for coin in data:
-                # Skip coins without required data
-                if not coin.get('circulating_supply') or not coin.get('max_supply'):
+            processed_data: List[Dict[str, Any]] = []
+            for coin in all_coins:
+                # Skip wrapped or staked derivative tokens (e.g., wrapped-bitcoin)
+                if any(sub in coin_id for sub in ('wrapped-', 'staked-', 'dollar', 'usd')):
                     continue
-                    
-                circulating_supply = coin['circulating_supply']
-                max_supply = coin['max_supply']
-                
-                # Calculate fully diluted percentage
-                fully_diluted_percentage = (circulating_supply / max_supply) * 100
-                
-                processed_coin = {
+
+                circulating_supply = coin.get('circulating_supply')
+                max_supply = coin.get('max_supply') or coin.get('total_supply')
+
+                # Skip coins without supply information
+                if not circulating_supply or not max_supply:
+                    continue
+
+                fd_pct = circulating_supply / max_supply  # fraction 0-1
+
+                processed_data.append({
+                    'market_cap_rank': coin.get('market_cap_rank', 0),
+                    'id': coin['id'],
                     'symbol': coin['symbol'].upper(),
-                    'name': coin['name'],
-                    'current_price': coin['current_price'],
-                    'market_cap': coin['market_cap'],
-                    'fully_diluted_valuation': coin.get('fully_diluted_valuation'),
                     'circulating_supply': circulating_supply,
                     'max_supply': max_supply,
-                    'fully_diluted_percentage': fully_diluted_percentage,
-                    'price_change_24h': coin.get('price_change_percentage_24h', 0)
-                }
-                
-                processed_data.append(processed_coin)
-            
+                    'fd_pct': fd_pct
+                })
+
+            logger.info(f"Processed {len(processed_data)} coins with valid supply data")
             return processed_data
-            
+
         except Exception as e:
             logger.error(f"Error fetching CoinGecko data: {str(e)}")
             return []
@@ -101,9 +119,11 @@ def update_fully_diluted_cache() -> None:
                 # Pre-compute threshold cache for all thresholds (0, 5, 10, ..., 100)
                 _threshold_cache = {}
                 for threshold in range(0, 101, 5):
+                    # Convert threshold percentage to fraction for comparison
+                    threshold_fraction = threshold / 100.0
                     _threshold_cache[threshold] = [
                         coin for coin in data 
-                        if coin['fully_diluted_percentage'] >= threshold
+                        if coin['fd_pct'] >= threshold_fraction
                     ]
                 
                 # Save to file
