@@ -77,25 +77,32 @@ def generate_questions(answered: List[Dict[str, str]]) -> List[str]:
 
     text: str = response.text.strip()
 
-    # Try to parse strict JSON first
+    # Find the JSON block and parse it
     try:
-        parsed = json.loads(text)
+        # Extract content from the first markdown code block
+        json_str = text.split("```json")[1].split("```")[0].strip()
+        parsed = json.loads(json_str)
         questions = parsed.get("additional_questions", [])
+
         if not isinstance(questions, list):
-            raise ValueError
-        # Ensure exactly three questions
-        questions = [str(q) for q in questions][:3]
-        while len(questions) < 3:
-            questions.append("")
-        return questions
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Failed to parse AI JSON response (%s). Falling back to line split.", exc)
+            raise ValueError("Parsed 'additional_questions' is not a list.")
+
+    except (IndexError, json.JSONDecodeError, ValueError) as exc:
+        logger.warning(
+            "Failed to parse AI JSON response, falling back to line split. Error: %s. Response: %s",
+            exc,
+            text,
+            exc_info=True,
+        )
         # Fallback: split by lines and pick first three non-empty lines
         lines = [ln.strip("- •* \t") for ln in text.splitlines() if ln.strip()]
         questions = lines[:3]
-        while len(questions) < 3:
-            questions.append("")
-        return questions
+
+    # Ensure exactly three questions are returned
+    questions = [str(q) for q in questions][:3]
+    while len(questions) < 3:
+        questions.append("")
+    return questions
 
 
 ###############################################################################

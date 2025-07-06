@@ -33,8 +33,15 @@ nor about trading strategies themselves. They should be about:
 - behavioral audit
 
 Return the result ONLY as valid JSON with the top-level
-key 'additional_questions' containing an array of three strings. Do
-NOT wrap the JSON in markdown or any additional text.
+key 'additional_questions' containing an array of three strings.
+
+The JSON response MUST be wrapped in a markdown code block.
+For example:
+```json
+{
+  "additional_questions": ["q1", "q2", "q3"]
+}
+```
 """.strip()
 
 
