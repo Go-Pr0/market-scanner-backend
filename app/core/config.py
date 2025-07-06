@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     # Gemini AI API key for AI-powered features (optional)
     gemini_api_key: Optional[str] = None
 
-    # Path to the SQLite database used by Bybit data fetcher (optional override)
-    database_path: Optional[str] = "./data/market_data.db"
+    # Single unified SQLite database path (was market_data.db)
+    database_path: Optional[str] = "./data/ai_assistant.db"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
