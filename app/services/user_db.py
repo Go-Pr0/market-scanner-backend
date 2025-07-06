@@ -4,7 +4,6 @@ Database service for user management and authentication.
 
 import sqlite3
 import bcrypt
-import json
 from datetime import datetime
 from typing import List, Optional, Tuple
 from contextlib import contextmanager
@@ -23,7 +22,6 @@ class UserDB:
         self.db_path = db_path
         self._ensure_db_directory()
         self._init_database()
-        self._migrate_existing_data()
     
     def _ensure_db_directory(self):
         """Ensure the database directory exists."""
@@ -94,42 +92,7 @@ class UserDB:
             
             conn.commit()
     
-    def _migrate_existing_data(self):
-        """Migrate data from old users.json file if it exists."""
-        old_users_file = "./data/users.json"
-        if os.path.exists(old_users_file):
-            try:
-                with open(old_users_file, 'r') as f:
-                    old_users = json.load(f)
-                
-                logger.info(f"Migrating {len(old_users)} users from users.json")
-                
-                for user_data in old_users:
-                    email = user_data.get('email')
-                    password = user_data.get('password')
-                    
-                    if email and password:
-                        # Add to whitelist
-                        self.add_email_to_whitelist(email)
-                        
-                        # Create user if not exists
-                        if not self.get_user_by_email(email):
-                            user_create = UserCreate(
-                                email=email,
-                                password=password,
-                                full_name=None
-                            )
-                            self.create_user(user_create)
-                            logger.info(f"Migrated user: {email}")
-                
-                # Backup and remove old file
-                backup_file = f"{old_users_file}.backup"
-                os.rename(old_users_file, backup_file)
-                logger.info(f"Backed up old users.json to {backup_file}")
-                
-            except Exception as e:
-                logger.error(f"Error migrating users.json: {e}")
-    
+
     def _hash_password(self, password: str) -> str:
         """Hash a password using bcrypt."""
         salt = bcrypt.gensalt()

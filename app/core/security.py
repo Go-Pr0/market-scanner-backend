@@ -81,18 +81,4 @@ async def require_auth(current_user: User = Depends(get_current_user)) -> User:
     """
     return current_user
 
-
-# Legacy function for backward compatibility during migration
-async def verify_access_token_legacy(request) -> bool:
-    """
-    Legacy token verification for backward compatibility.
-    This will be removed after full migration to JWT.
-    """
-    import os
-    
-    expected_token = os.getenv("ACCESS_PASSWORD")
-    if not expected_token:
-        return False
-    
-    access_token = request.headers.get("X-Access-Token")
-    return access_token == expected_token 
+ 
