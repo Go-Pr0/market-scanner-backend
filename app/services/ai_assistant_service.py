@@ -4,11 +4,10 @@ New AI assistant service with persistent chat storage and individual message han
 
 import json
 import logging
-import os
 from typing import List, Dict, Any, Optional, Tuple
 from google import genai
 
-from app.core.config import settings
+from app.core.config import config
 from app.services import prompts
 from app.services.ai_assistant_db import ai_assistant_db
 from app.services.user_db import user_db
@@ -20,7 +19,7 @@ logger = logging.getLogger(__name__)
 # Client initialisation
 # ---------------------------------------------------------------------------
 
-_api_key: Optional[str] = settings.gemini_api_key or os.getenv("GEMINI_API_KEY")
+_api_key: Optional[str] = config.GEMINI_API_KEY
 if not _api_key:
     logger.warning("GEMINI_API_KEY is not configured – AI endpoints will raise errors.")
     genai_client: Optional[genai.Client] = None

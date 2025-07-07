@@ -11,6 +11,7 @@ from contextlib import contextmanager
 import logging
 import os
 
+from app.core.config import config
 from app.models.ai_assistant import ChatSession, ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -19,8 +20,8 @@ logger = logging.getLogger(__name__)
 class AIAssistantDB:
     """Database service for AI assistant chat system."""
     
-    def __init__(self, db_path: str = "./data/ai_assistant.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: str = None):
+        self.db_path = db_path or config.AI_ASSISTANT_DB_PATH
         self._ensure_db_directory()
         self._init_database()
     

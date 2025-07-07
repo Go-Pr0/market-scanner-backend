@@ -13,6 +13,7 @@ current_dir = Path(__file__).parent
 bybit_fetcher_path = current_dir.parent / "bybit_data_fetcher"
 sys.path.insert(0, str(bybit_fetcher_path))
 
+from app.core.config import config
 from app.bybit_data_fetcher.database.db_manager import DatabaseManager
 from app.bybit_data_fetcher.api.bybit_client import BybitClient
 from app.bybit_data_fetcher.utils.data_fetcher import DataFetcher
@@ -26,12 +27,6 @@ logger = logging.getLogger('bybit_monitor_service')
 CHECK_INTERVAL = 60  # Check interval in seconds
 TIMEFRAME = "15"  # 15 minute timeframe
 TARGET_CANDLES = 35000  # Target number of candles to fetch
-
-# Database path configuration
-_current_dir = os.path.dirname(os.path.abspath(__file__))
-_backend_dir = os.path.dirname(_current_dir)
-_database_dir = os.path.join(_backend_dir, "bybit_data_fetcher", "database")
-DATABASE_PATH = os.path.join(_database_dir, "bybit_market_data.db")
 
 # Global variables for handling the monitor
 is_running = True
@@ -58,10 +53,10 @@ class BybitMonitorService:
     async def monitor_trading_pairs(self):
         """Continuously monitor trading pairs and fetch new candles."""
         # Ensure database directory exists
-        os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
+        os.makedirs(os.path.dirname(config.BYBIT_DB_PATH), exist_ok=True)
         
         # Create database manager and connect
-        db_manager = DatabaseManager(DATABASE_PATH)
+        db_manager = DatabaseManager(config.BYBIT_DB_PATH)
         await db_manager.connect()
         
         trading_pairs = get_trading_symbols()

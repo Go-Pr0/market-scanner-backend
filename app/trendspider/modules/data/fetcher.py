@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple
 
+from app.core.config import config as app_config
 from ... import config
 
 # Setup logging
@@ -31,13 +32,9 @@ def get_db_manager():
         # Import and initialize DatabaseManager
         from bybit_data_fetcher.database.db_manager import DatabaseManager
         
-        # Initialize database manager - use absolute path to the database
-        _current_dir = os.path.dirname(os.path.abspath(__file__))
-        modules_dir = os.path.dirname(os.path.dirname(os.path.dirname(_current_dir)))
-        DB_PATH = os.path.join(modules_dir, 'bybit_data_fetcher', 'database', 'bybit_market_data.db')
-        DB_PATH = os.path.abspath(DB_PATH)  # Convert to absolute path
-        db_manager = DatabaseManager(DB_PATH)
-        logger.info(f"Initialized database manager with path: {DB_PATH}")
+        # Initialize database manager using centralized config
+        db_manager = DatabaseManager(app_config.BYBIT_DB_PATH)
+        logger.info(f"Initialized database manager with path: {app_config.BYBIT_DB_PATH}")
     
     return db_manager
 

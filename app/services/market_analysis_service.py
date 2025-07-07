@@ -3,24 +3,18 @@ Market analysis service for calculating top gainers, losers, and most active tra
 """
 import asyncio
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 import pandas as pd
 from threading import Lock
 
+from app.core.config import config
 from app.bybit_data_fetcher.database.db_manager import DatabaseManager
 from app.core.symbols import get_trading_symbols
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('market_analysis_service')
-
-# Database path configuration
-_current_dir = os.path.dirname(os.path.abspath(__file__))
-_backend_dir = os.path.dirname(_current_dir)
-_database_dir = os.path.join(_backend_dir, "bybit_data_fetcher", "database")
-DATABASE_PATH = os.path.join(_database_dir, "bybit_market_data.db")
 
 # Cache variables
 _cached_gainers: List[Dict[str, Any]] = []
@@ -36,7 +30,7 @@ class MarketAnalysisService:
     async def connect(self):
         """Connect to the database."""
         if self.db_manager is None:
-            self.db_manager = DatabaseManager(DATABASE_PATH)
+            self.db_manager = DatabaseManager(config.BYBIT_DB_PATH)
             await self.db_manager.connect()
     
     async def close(self):

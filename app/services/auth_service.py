@@ -3,32 +3,27 @@ Authentication service for JWT token management.
 """
 
 import jwt
-import os
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import logging
 
+from app.core.config import config
 from app.models.user import User, UserCreate, UserLogin, TokenResponse, UserResponse
 from app.services.user_db import user_db
 
 logger = logging.getLogger(__name__)
-
-# JWT Configuration
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this-in-production")
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_HOURS = 24
 
 
 class AuthService:
     """Authentication service for user management and JWT tokens."""
     
     def __init__(self):
-        if JWT_SECRET_KEY == "your-secret-key-change-this-in-production":
+        if config.JWT_SECRET_KEY == "your-secret-key-change-this-in-production":
             logger.warning("Using default JWT secret key. Please set JWT_SECRET_KEY environment variable in production.")
     
     def create_access_token(self, user: User) -> str:
         """Create a JWT access token for a user."""
-        expire = datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
+        expire = datetime.utcnow() + timedelta(hours=config.JWT_EXPIRATION_HOURS)
         
         payload = {
             "sub": str(user.id),  # Subject (user ID)
@@ -39,12 +34,12 @@ class AuthService:
             "type": "access"
         }
         
-        return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+        return jwt.encode(payload, config.JWT_SECRET_KEY, algorithm=config.JWT_ALGORITHM)
     
     def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
         """Verify and decode a JWT token."""
         try:
-            payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+            payload = jwt.decode(token, config.JWT_SECRET_KEY, algorithms=[config.JWT_ALGORITHM])
             
             # Check if token is expired
             if datetime.utcnow() > datetime.fromtimestamp(payload.get("exp", 0)):
@@ -96,7 +91,7 @@ class AuthService:
             return TokenResponse(
                 access_token=access_token,
                 token_type="bearer",
-                expires_in=JWT_EXPIRATION_HOURS * 3600,  # Convert to seconds
+                expires_in=config.JWT_EXPIRATION_HOURS * 3600,  # Convert to seconds
                 user=user_response
             )
         
@@ -129,7 +124,7 @@ class AuthService:
         return TokenResponse(
             access_token=access_token,
             token_type="bearer",
-            expires_in=JWT_EXPIRATION_HOURS * 3600,  # Convert to seconds
+            expires_in=config.JWT_EXPIRATION_HOURS * 3600,  # Convert to seconds
             user=user_response
         )
     
@@ -155,7 +150,7 @@ class AuthService:
         return TokenResponse(
             access_token=access_token,
             token_type="bearer",
-            expires_in=JWT_EXPIRATION_HOURS * 3600,
+            expires_in=config.JWT_EXPIRATION_HOURS * 3600,
             user=user_response
         )
     

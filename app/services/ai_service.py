@@ -14,11 +14,10 @@ NOTE: The Google client is created once at import time for efficiency.
 from typing import List, Dict, Any, Optional
 import json
 import logging
-import os
 import uuid
 from google import genai
 
-from app.core.config import settings
+from app.core.config import config
 from app.services import prompts
 
 logger = logging.getLogger(__name__)
@@ -27,7 +26,7 @@ logger = logging.getLogger(__name__)
 # Client initialisation
 # ---------------------------------------------------------------------------
 
-_api_key: Optional[str] = settings.gemini_api_key or os.getenv("GEMINI_API_KEY")
+_api_key: Optional[str] = config.GEMINI_API_KEY
 if not _api_key:
     logger.warning("GEMINI_API_KEY is not configured – AI endpoints will raise errors.")
     # We still create a dummy client to avoid import errors; real calls will fail.

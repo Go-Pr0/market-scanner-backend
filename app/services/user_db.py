@@ -10,6 +10,7 @@ from contextlib import contextmanager
 import logging
 import os
 
+from app.core.config import config
 from app.models.user import User, UserCreate, WhitelistEmail
 
 logger = logging.getLogger(__name__)
@@ -18,8 +19,8 @@ logger = logging.getLogger(__name__)
 class UserDB:
     """Database service for user management."""
     
-    def __init__(self, db_path: str = "./data/users.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: str = None):
+        self.db_path = db_path or config.USER_DB_PATH
         self._ensure_db_directory()
         self._init_database()
     
