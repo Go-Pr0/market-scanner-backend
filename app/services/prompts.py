@@ -87,11 +87,11 @@ def build_chat_advisor_system_message(status: str, data: Dict[str, Any]) -> str:
         )
 
     system_context = (
-        "//START QUESTIONNAIRE"
         f"{role_instruction}\n\n"
-        "//END QUESTIONNAIRE"
         f"This is a questionnaire that I filled out with some things I have been working on:\n"
+        "//START QUESTIONNAIRE"
         f"{json.dumps(data, indent=2)}\n\n"
+        "//END QUESTIONNAIRE"
         "The goal here should be to help me reflect on the objective I stated at the start before I perform this action."
         "Help me think though key items, ask me whether or not it's within my trading plan."
         "Keep the conversation going for approx 4 turns you will see in the context and then start finishing up gradually"

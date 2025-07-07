@@ -10,6 +10,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.core.security import require_auth
 from app.services import ai_assistant_service
+from app.services.ai_assistant_db import ai_assistant_db
 from app.models.ai_assistant import (
     ChatMessageRequest, 
     ChatMessageResponse, 
@@ -33,6 +34,20 @@ class GenerateQuestionsRequest(BaseModel):
 
 class GenerateQuestionsResponse(BaseModel):
     additional_questions: List[str]
+
+
+class SaveQuestionnaireRequest(BaseModel):
+    questions: List[AnsweredItem] = Field(..., description="List of question/answer pairs to save.")
+
+
+class SaveQuestionnaireResponse(BaseModel):
+    success: bool
+    message: str
+
+
+class GetQuestionnaireResponse(BaseModel):
+    questions: List[AnsweredItem]
+    has_questionnaire: bool
 
 
 # Legacy models for backward compatibility
@@ -69,6 +84,65 @@ async def generate_questions(
             [item.model_dump() for item in request.answered],
         )
         return GenerateQuestionsResponse(additional_questions=questions)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/questionnaire/save", response_model=SaveQuestionnaireResponse)
+async def save_questionnaire(
+    request: SaveQuestionnaireRequest,
+    current_user: User = Depends(require_auth),
+):
+    """Save user's questionnaire answers to the database."""
+    try:
+        # Convert to the format expected by the database
+        questions_data = [
+            {"question": item.question, "answer": item.answer}
+            for item in request.questions
+        ]
+        
+        success = await run_in_threadpool(
+            ai_assistant_db.save_user_questionnaire,
+            current_user.email,
+            questions_data
+        )
+        
+        if success:
+            return SaveQuestionnaireResponse(
+                success=True,
+                message="Questionnaire saved successfully"
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to save questionnaire")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/questionnaire", response_model=GetQuestionnaireResponse)
+async def get_questionnaire(
+    current_user: User = Depends(require_auth),
+):
+    """Get user's saved questionnaire answers from the database."""
+    try:
+        questionnaire_data = await run_in_threadpool(
+            ai_assistant_db.get_user_questionnaire,
+            current_user.email
+        )
+        
+        if questionnaire_data:
+            questions = [
+                AnsweredItem(question=item.get("question", ""), answer=item.get("answer", ""))
+                for item in questionnaire_data
+            ]
+            return GetQuestionnaireResponse(
+                questions=questions,
+                has_questionnaire=True
+            )
+        else:
+            return GetQuestionnaireResponse(
+                questions=[],
+                has_questionnaire=False
+            )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

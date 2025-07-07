@@ -77,6 +77,18 @@ class AIAssistantDB:
                 )
             """)
             
+            # Create trade_questions table for questionnaire data
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS trade_questions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_email TEXT NOT NULL,
+                    questions_json TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_email)
+                )
+            """)
+            
             # Create indexes for better performance
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_id 
@@ -96,6 +108,11 @@ class AIAssistantDB:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id 
                 ON chat_sessions (user_id)
+            """)
+            
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_trade_questions_user_email 
+                ON trade_questions (user_email)
             """)
             
             # Check if user_id column exists, if not add it (migration)
@@ -322,6 +339,52 @@ class AIAssistantDB:
         
         messages = self.get_chat_messages(chat_id)
         return chat_session, messages
+    
+    def get_user_questionnaire(self, user_email: str) -> Optional[List[Dict[str, str]]]:
+        """Get user's questionnaire data from trade_questions table."""
+        with self._get_connection() as conn:
+            row = conn.execute("""
+                SELECT questions_json FROM trade_questions 
+                WHERE user_email = ?
+            """, (user_email,)).fetchone()
+            
+            if not row or not row['questions_json']:
+                return None
+            
+            try:
+                questions_data = json.loads(row['questions_json'])
+                # Ensure it's a list of question/answer pairs
+                if isinstance(questions_data, list):
+                    return questions_data
+                else:
+                    logger.warning(f"Invalid questionnaire format for user {user_email}")
+                    return None
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse questionnaire JSON for user {user_email}")
+                return None
+    
+    def save_user_questionnaire(self, user_email: str, questions: List[Dict[str, str]]) -> bool:
+        """Save or update user's questionnaire data."""
+        now = datetime.utcnow()
+        questions_json = json.dumps(questions)
+        
+        with self._get_connection() as conn:
+            # Try to update existing record first
+            cursor = conn.execute("""
+                UPDATE trade_questions 
+                SET questions_json = ?, updated_at = ?
+                WHERE user_email = ?
+            """, (questions_json, now, user_email))
+            
+            if cursor.rowcount == 0:
+                # Insert new record if update didn't affect any rows
+                conn.execute("""
+                    INSERT INTO trade_questions (user_email, questions_json, created_at, updated_at)
+                    VALUES (?, ?, ?, ?)
+                """, (user_email, questions_json, now, now))
+            
+            conn.commit()
+            return True
 
 
 # Global database instance

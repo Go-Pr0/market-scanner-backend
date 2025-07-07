@@ -11,6 +11,7 @@ from google import genai
 from app.core.config import settings
 from app.services import prompts
 from app.services.ai_assistant_db import ai_assistant_db
+from app.services.user_db import user_db
 from app.models.ai_assistant import ChatSession, ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,7 @@ def generate_questions(answered: List[Dict[str, str]]) -> List[str]:
     prompt = f"{prompts.GENERATE_QUESTIONS_PROMPT}\n\nPREVIOUS ANSWERS:\n{json.dumps(answered, indent=2)}"
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-2.5-pro-preview-06-05",
         contents=prompt,
     )
 
@@ -116,7 +117,7 @@ def send_chat_message(
         message: User message content
         chat_id: Existing chat ID to continue conversation
         status: Chat status for new chats ('pre-trade' or 'management')
-        context_data: Context data for new chats
+        context_data: Context data for new chats (ignored - questionnaire retrieved from DB)
         
     Returns:
         Tuple of (ChatSession, AI response ChatMessage)
@@ -133,12 +134,30 @@ def send_chat_message(
         if not status:
             raise ValueError("Status is required for new chat sessions")
         
+        # Get user information to retrieve questionnaire
+        user = user_db.get_user_by_id(user_id)
+        if not user:
+            raise ValueError(f"User {user_id} not found")
+        
+        # Retrieve questionnaire data from database
+        questionnaire_data = ai_assistant_db.get_user_questionnaire(user.email)
+        if not questionnaire_data:
+            logger.warning(f"No questionnaire data found for user {user.email}")
+            questionnaire_data = []
+        
+        # Build context data from questionnaire
+        db_context_data = {
+            "questions": [q.get("question", "") for q in questionnaire_data],
+            "answers": [q.get("answer", "") for q in questionnaire_data],
+            "questionnaire_complete": len(questionnaire_data) > 0
+        }
+        
         # Generate title from first message
         title = _generate_chat_title(message, status)
         chat_session = ai_assistant_db.create_chat_session(
             user_id=user_id,
             status=status,
-            context_data=context_data,
+            context_data=db_context_data,
             title=title
         )
         is_new_chat = True
@@ -163,7 +182,7 @@ def send_chat_message(
         
         # Send system message and user message together
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-pro-preview-06-05",
             contents=[
                 {"role": "user", "parts": [{"text": system_message}]},
                 {"role": "user", "parts": [{"text": message}]}
@@ -203,7 +222,7 @@ def send_chat_message(
         })
         
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-pro-preview-06-05",
             contents=conversation_history
         )
     
