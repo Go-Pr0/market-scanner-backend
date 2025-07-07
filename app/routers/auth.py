@@ -16,6 +16,8 @@ from app.models.user import (
     UserUpdate,
     WhitelistEmailCreate,
     WhitelistEmailResponse,
+    EmailCheckRequest,
+    EmailCheckResponse,
     User
 )
 from app.services.auth_service import auth_service
@@ -175,22 +177,18 @@ async def change_password(
         )
 
 
-@router.post("/check-email")
-async def check_email_whitelist(email_check: dict):
+@router.post("/check-email", response_model=EmailCheckResponse)
+async def check_email_whitelist(email_check: EmailCheckRequest):
     """Check if an email is whitelisted for registration."""
-    email = email_check.get("email")
-    if not email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email is required"
-        )
-    
     is_whitelisted = await run_in_threadpool(
         auth_service.is_email_whitelisted,
-        email
+        email_check.email
     )
     
-    return {"email": email, "is_whitelisted": is_whitelisted}
+    return EmailCheckResponse(
+        email=email_check.email,
+        is_whitelisted=is_whitelisted
+    )
 
 
 # Admin endpoints for managing whitelist (require authentication)

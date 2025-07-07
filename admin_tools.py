@@ -10,6 +10,10 @@ import argparse
 import getpass
 from typing import List, Optional
 
+# Load environment variables before importing services
+from dotenv import load_dotenv
+load_dotenv()
+
 # Add the backend directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

@@ -6,10 +6,11 @@ Your Market Scanner backend is now fully prepared for deployment with all critic
 
 ## 🔧 What Was Fixed
 
-### **Critical Database Issue Resolved:**
+### **Critical Issues Resolved:**
 - **✅ `trade_questions` table creation** - Added to `ai_assistant_db.py` initialization
 - **✅ Questionnaire data flow** - Now retrieves from database instead of frontend localStorage
 - **✅ Database auto-creation** - All databases will be created automatically on startup
+- **✅ JWT environment loading** - Fixed admin_tools.py to load .env file before importing services
 
 ### **Questionnaire System Improvements:**
 - **✅ Database-first approach** - Single source of truth in the database
@@ -59,11 +60,13 @@ python main.py
 
 ### **Production Start:**
 ```bash
-# With uvicorn
+# With uvicorn (RECOMMENDED for this application)
 uvicorn main:app --host 0.0.0.0 --port 8000
 
-# With gunicorn (recommended for production)
-gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+# Note: Gunicorn with multiple workers causes issues with:
+# - SQLite database concurrent writes
+# - API rate limiting (4x the requests)
+# - Background task duplication
 ```
 
 ## 🔍 Health Check

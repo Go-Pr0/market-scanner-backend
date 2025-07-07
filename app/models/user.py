@@ -81,3 +81,14 @@ class UserUpdate(BaseModel):
     """User update model."""
     full_name: Optional[str] = None
     email: Optional[EmailStr] = None
+
+
+class EmailCheckRequest(BaseModel):
+    """Email check request model."""
+    email: EmailStr
+
+
+class EmailCheckResponse(BaseModel):
+    """Email check response model."""
+    email: EmailStr
+    is_whitelisted: bool

@@ -53,7 +53,7 @@ python admin_tools.py test-login your-email@domain.com
 - Ensure Python 3.8+ is installed
 - Create application directory
 - Set up reverse proxy (nginx/apache) if needed
-- Configure firewall for port 8000 (or your chosen port)
+- Configure firewall for port 8000
 
 ### 2. Application Deployment
 ```bash

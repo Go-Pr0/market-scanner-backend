@@ -9,10 +9,10 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     # Interval in seconds for refreshing the fully-diluted cache
-    fully_diluted_update_interval: int = 600  # default 10 minutes
+    fully_diluted_update_interval: int = 1800  # default 30 minutes (reduced frequency)
     
     # Interval in seconds for refreshing the market analysis cache
-    market_analysis_update_interval: int = 900  # default 15 minutes
+    market_analysis_update_interval: int = 2700  # default 45 minutes (reduced frequency)
     
     # Access password for API authentication
     access_password: Optional[str] = None

@@ -72,7 +72,7 @@ class FullyDilutedService:
             processed_data: List[Dict[str, Any]] = []
             for coin in all_coins:
                 # Skip wrapped or staked derivative tokens (e.g., wrapped-bitcoin)
-                if any(sub in coin_id for sub in ('wrapped-', 'staked-', 'dollar', 'usd')):
+                if any(sub in coin['id'] for sub in ('wrapped-', 'staked-', 'dollar', 'usd')):
                     continue
 
                 circulating_supply = coin.get('circulating_supply')
