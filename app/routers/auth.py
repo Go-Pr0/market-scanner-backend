@@ -2,9 +2,13 @@
 Authentication router for user registration, login, and management.
 """
 
+import logging
 from typing import List
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Request
 from fastapi.concurrency import run_in_threadpool
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 from app.core.security import require_auth, get_current_user
 from app.models.user import (
@@ -177,18 +181,41 @@ async def change_password(
         )
 
 
+@router.options("/check-email")
+async def check_email_options(request: Request):
+    """Handle OPTIONS preflight request for check-email endpoint."""
+    logger.info(f"OPTIONS request for /check-email from {request.client.host if request.client else 'unknown'}")
+    logger.info(f"Origin: {request.headers.get('origin', 'Not set')}")
+    return {"message": "OK"}
+
+
 @router.post("/check-email", response_model=EmailCheckResponse)
-async def check_email_whitelist(email_check: EmailCheckRequest):
+async def check_email_whitelist(email_check: EmailCheckRequest, request: Request):
     """Check if an email is whitelisted for registration."""
-    is_whitelisted = await run_in_threadpool(
-        auth_service.is_email_whitelisted,
-        email_check.email
-    )
-    
-    return EmailCheckResponse(
-        email=email_check.email,
-        is_whitelisted=is_whitelisted
-    )
+    try:
+        # Log request details
+        logger.info(f"Check email request from {request.client.host if request.client else 'unknown'}")
+        logger.info(f"Request headers: {dict(request.headers)}")
+        logger.info(f"Request method: {request.method}")
+        logger.info(f"Email to check: {email_check.email}")
+        
+        is_whitelisted = await run_in_threadpool(
+            auth_service.is_email_whitelisted,
+            email_check.email
+        )
+        
+        logger.info(f"Email {email_check.email} whitelist status: {is_whitelisted}")
+        
+        return EmailCheckResponse(
+            email=email_check.email,
+            is_whitelisted=is_whitelisted
+        )
+    except Exception as e:
+        logger.error(f"Error in check_email_whitelist: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Email check failed: {str(e)}"
+        )
 
 
 # Admin endpoints for managing whitelist (require authentication)
