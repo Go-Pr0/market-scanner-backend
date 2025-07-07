@@ -73,33 +73,49 @@ def build_chat_advisor_system_message(status: str, data: Dict[str, Any]) -> str:
     if status.lower() == "management":
         role_instruction = (
             "You are an AI assistant helping a trader evaluate an **existing** "
-            "open position for continuation, adjustment, or exit."
-            "Ask me about my management plan for this trade, and why I want to alter anything"
-            ""
+            "open position for continuation, adjustment, or exit. "
+            "Ask me about my management plan for this trade, and why I want to alter anything."
         )
     else:  # Default to "pre-trade"
         role_instruction = (
             "You are an AI assistant helping a trader evaluate a **new** trade "
-            "before entry. Ask me about my trading plan, and why I want to enter this trade."
-            "Ask me things such as: if I planned the trade beforehand,etc. Focus on my mentality"
-            "& space of mind while going into this trade, tailor your questions to that."
+            "before entry. Ask me about my trading plan, and why I want to enter this trade. "
+            "Ask me things such as: if I planned the trade beforehand, etc. Focus on my mentality "
+            "& space of mind while going into this trade, tailor your questions to that. "
             "Do not focus on the technicals whatsoever."
         )
 
+    # Build questionnaire context if available
+    questionnaire_context = ""
+    if data and data.get('questionnaire_complete', False):
+        questions = data.get('questions', [])
+        answers = data.get('answers', [])
+        
+        if questions and answers and len(questions) == len(answers):
+            questionnaire_context = (
+                "\n\nIMPORTANT: I have previously completed a questionnaire about my trading habits. "
+                "Here are my responses that you should reference and use in our conversation:\n\n"
+            )
+            
+            for i, (question, answer) in enumerate(zip(questions, answers), 1):
+                questionnaire_context += f"Q{i}: {question}\n"
+                questionnaire_context += f"A{i}: {answer}\n\n"
+            
+            questionnaire_context += (
+                "Please reference these specific answers when relevant to our conversation. "
+                "If I ask about my trading mistakes, improvements, or habits, refer to these exact responses. "
+                "Use the information I provided to personalize your guidance.\n\n"
+            )
+
     system_context = (
-        f"{role_instruction}\n\n"
-        f"This is a questionnaire that I filled out with some things I have been working on:\n"
-        "//START QUESTIONNAIRE"
-        f"{json.dumps(data, indent=2)}\n\n"
-        "//END QUESTIONNAIRE"
-        "The goal here should be to help me reflect on the objective I stated at the start before I perform this action."
-        "Help me think though key items, ask me whether or not it's within my trading plan."
-        "Keep the conversation going for approx 4 turns you will see in the context and then start finishing up gradually"
-        "and ask me questions about what I asked you to ask me."
-        "do NOT mention risk management, and just head straight in from here, returning"
-        "only the answer, and not refering to what I just said."
-        "keep the conversation going until we reach a conclusion."
-        "Ask each question one by one"
-        "Start the convo, only ask one question at a time. Make sure to focus on what I am saying."
+        f"{role_instruction}"
+        f"{questionnaire_context}"
+        "Your goal is to help me reflect on the objective I stated at the start before I perform this action. "
+        "Help me think through key items, ask me whether or not it's within my trading plan. "
+        "Keep the conversation going for approximately 4 turns, then start finishing up gradually. "
+        "Ask me questions that relate to what I've shared about my trading psychology and habits. "
+        "Do NOT mention risk management, and just head straight in from here. "
+        "Ask each question one by one. Start the conversation with only one question at a time. "
+        "Make sure to focus on what I am saying and reference my questionnaire responses when appropriate."
     )
     return system_context

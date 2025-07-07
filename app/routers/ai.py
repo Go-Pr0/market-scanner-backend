@@ -147,6 +147,27 @@ async def get_questionnaire(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@router.get("/questionnaire/check")
+async def check_questionnaire_status(
+    current_user: User = Depends(require_auth),
+):
+    """Check if user has completed their questionnaire setup."""
+    try:
+        questionnaire_data = await run_in_threadpool(
+            ai_assistant_db.get_user_questionnaire,
+            current_user.email
+        )
+        
+        has_questionnaire = questionnaire_data is not None and len(questionnaire_data) > 0
+        
+        return {
+            "has_questionnaire": has_questionnaire,
+            "email": current_user.email
+        }
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @router.post("/chat/message", response_model=ChatMessageResponse)
 async def send_chat_message(
     request: ChatMessageRequest,
